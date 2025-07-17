@@ -1,63 +1,34 @@
 # This is a sample Python script.
+"""
+CSV to SQLite Database Converter
 
-#Import pandas library
+This module provides functionality to read CSV files and convert them
+to SQLite database tables with appropriate column types.
+"""
+
+
+# Third-party imports
 import pandas as pd
 from pandas import DataFrame
-# Import the sqlalchemy library
+
+# SQLAlchemy imports
 from sqlalchemy import (
     String, Integer, Float, Boolean, DateTime,
     Text, Date, Column, create_engine
 )
-from sqlalchemy.orm import declarative_base,sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+# Constants and Configurations
+DATABASE_URL = 'sqlite:///example.db'
+DEFAULT_STRING_LENGTH = 255
+
+# Create the database engine at module level
+engine = create_engine(DATABASE_URL, echo=True)
+
+# Create the base class for dynamic models
+DynamicBase = declarative_base()
 
 
-def main():
-    global engine, file_name
-    # Initialize the database
-    engine = create_engine('sqlite:///example.db', echo=True)  # `echo=True` logs SQL statements
-    # Create the base class for models
-    Base = declarative_base()
-    # Ask for user's name
-    file_name = input("What is the file name/location to import? ")
-
-    read_file(file_name)
-
-
-def read_file(file_name):
-    #boolean to track if file is found
-    file_is_found = False
-
-
-    while file_is_found == False:
-        # Read the file
-        try:
-            with open(f"{file_name}", "r") as file:
-                content = file.read()
-                print(content)
-        #handle errors
-        except FileNotFoundError:
-            print("Error: The specified file was not found.")
-            file_name = input("Enter file name/location or 0 to exit script: ")
-            if(file_name == '0'):
-                break
-            else:
-                continue
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-
-        else:
-            file_is_found = True
-            df = pd.read_csv(f"{file_name}")
-            preview_save_data(df)
-
-def get_model_structure(data_extracted: DataFrame):
-    # Get the data types directly as a DataFrame
-    dtype_df = pd.DataFrame(data_extracted.dtypes).reset_index()
-    dtype_df.columns = ['Column', 'Dtype']  # Rename the columns
-    # Print the new DataFrame to verify
-    print(dtype_df)
-
-#------------------------------------------------
 
 def get_sqlalchemy_type(pandas_type):
     """Map pandas dtypes to SQLAlchemy types"""
@@ -78,10 +49,6 @@ def get_sqlalchemy_type(pandas_type):
         return String(length=255)  # You might want to adjust the length
     else:
         return Text  # Default to Text for any other types
-
-
-# Create a new Base class for our dynamic model
-DynamicBase = declarative_base()
 
 
 # Generate the model class dynamically based on your DataFrame
@@ -109,47 +76,79 @@ def create_table_class(df, table_name):
     return type(table_name, (DynamicBase,), class_attrs)
 
 
-def preview_save_data(df: DataFrame):
-    # Slice the data
-    data_extracted = df[:]
-    # Output the resulting dataset
-    print(data_extracted.head())
-    #data structure
-    data_extracted.info()
-    # Generate descriptive statistics for numerical columns
-    print(df.describe())
-    option = input("Should this be saved to the database? (yes/no): ")
+def read_file(file_name: str) -> None:
+    #boolean to track if file is found
+    file_is_found = False
 
-    if option.upper() == 'YES':
+
+    while file_is_found == False:
+        # Read the file
         try:
-            # Get the model structure and create table class
-            DynamicTable = create_table_class(data_extracted, 'dynamic_table')
-            # Create tables
-            DynamicBase.metadata.create_all(engine)
+            with open(f"{file_name}", "r") as file:
+                content = file.read()
+                print(content)
+        #handle errors
+        except FileNotFoundError:
+            print("Error: The specified file was not found.")
+            file_name = input("Enter file name/location or 0 to exit script: ")
+            if(file_name == '0'):
+                break
+            else:
+                continue
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
-            # Create a session
-            Session = sessionmaker(bind=engine)
-            session = Session()
+        else:
+            file_is_found = True
+            df = pd.read_csv(f"{file_name}")
+            preview_save_data(df)
 
-            # Convert DataFrame to dict and insert records
-            records = data_extracted.to_dict('records')
-            for record in records:
-                db_record = DynamicTable(**record)
-                session.add(db_record)
 
-            # Try to commit and catch any conflicts
+# Data preview and storage functions
+def preview_save_data(df: DataFrame) -> None:
+    """Preview data and save to database if confirmed."""
+    data_extracted = df[:]
+    print(data_extracted.head())
+    data_extracted.info()
+    print(df.describe())
+
+    if input("Should this be saved to the database? (yes/no): ").upper() == 'YES':
+        save_to_database(data_extracted)
+    else:
+        quit()
+
+
+def save_to_database(data_extracted: DataFrame) -> None:
+    """Save DataFrame to database."""
+    try:
+        DynamicTable = create_table_class(data_extracted, 'dynamic_table')
+        DynamicBase.metadata.create_all(engine)
+
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        try:
+            for record in data_extracted.to_dict('records'):
+                session.add(DynamicTable(**record))
             session.commit()
             print("Data successfully saved to database!")
-
         except Exception as e:
             session.rollback()
             print(f"Error saving to database: {e}")
         finally:
             session.close()
-    else:
-        quit()
+    except Exception as e:
+        print(f"Error setting up database: {e}")
 
-main()
+
+def main():
+        global engine, file_name
+        # Ask for file name to import
+        file_name = input("What is the file name/location to import? ")
+        read_file(file_name)
+
+if __name__ == '__main__':
+    main()
 
 
 
